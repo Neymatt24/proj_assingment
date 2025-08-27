@@ -52,7 +52,7 @@ class iPadChatbotAgent:
             
             # Initialize ChatGroq LLM
             self.llm = ChatGroq(
-                model="mixtral-8x7b-32768",
+                model="llama-3.3-70b-versatile",
                 temperature=0.1,
                 api_key=groq_api_key
             )
