@@ -1,10 +1,11 @@
 # backend/chatbot/ipad_agent.py
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, START, END
 from langchain_groq import ChatGroq
-from typing import TypedDict, Annotated, List, Dict, Any
+from typing import TypedDict, Annotated, List, Dict, Any, Literal
 import operator
 import asyncio
 import re
+import os
 from datetime import datetime
 
 from utils.web_search import WebSearchTool
@@ -36,11 +37,15 @@ class iPadChatbotAgent:
     async def initialize(self):
         """Initialize all components"""
         try:
+            # Check for required environment variables
+            if not os.getenv("GROQ_API_KEY"):
+                raise ValueError("GROQ_API_KEY environment variable is required")
+            
             # Initialize ChatGroq LLM
             self.llm = ChatGroq(
-                model="mixtral-8x7b-32768",  # or "llama2-70b-4096"
+                model="mixtral-8x7b-32768",
                 temperature=0.1,
-                groq_api_key=os.getenv("GROQ_API_KEY")
+                api_key=os.getenv("GROQ_API_KEY")
             )
             
             # Initialize tools
@@ -68,9 +73,8 @@ class iPadChatbotAgent:
         workflow.add_node("generate_response", self._generate_response)
         workflow.add_node("handle_error", self._handle_error)
         
-        # Define the flow
-        workflow.set_entry_point("classify_query")
-        
+        # Define the flow - updated for newer LangGraph
+        workflow.add_edge(START, "classify_query")
         workflow.add_edge("classify_query", "search_web")
         workflow.add_edge("search_web", "process_information")
         workflow.add_edge("process_information", "generate_response")
@@ -87,6 +91,24 @@ class iPadChatbotAgent:
             }
         )
         
+        workflow.add_conditional_edges(
+            "search_web",
+            self._should_handle_error,
+            {
+                "continue": "process_information",
+                "error": "handle_error"
+            }
+        )
+        
+        workflow.add_conditional_edges(
+            "process_information",
+            self._should_handle_error,
+            {
+                "continue": "generate_response",
+                "error": "handle_error"
+            }
+        )
+        
         self.workflow = workflow.compile()
     
     async def _classify_query(self, state: AgentState) -> AgentState:
@@ -99,6 +121,7 @@ class iPadChatbotAgent:
             return state
         except Exception as e:
             state["error"] = f"Classification error: {str(e)}"
+            logger.error(f"Classification error: {str(e)}")
             return state
     
     async def _search_web(self, state: AgentState) -> AgentState:
@@ -117,6 +140,7 @@ class iPadChatbotAgent:
             
         except Exception as e:
             state["error"] = f"Search error: {str(e)}"
+            logger.error(f"Search error: {str(e)}")
             return state
     
     async def _process_information(self, state: AgentState) -> AgentState:
@@ -135,6 +159,7 @@ class iPadChatbotAgent:
             
         except Exception as e:
             state["error"] = f"Processing error: {str(e)}"
+            logger.error(f"Processing error: {str(e)}")
             return state
     
     async def _generate_response(self, state: AgentState) -> AgentState:
@@ -153,6 +178,7 @@ class iPadChatbotAgent:
             
         except Exception as e:
             state["error"] = f"Response generation error: {str(e)}"
+            logger.error(f"Response generation error: {str(e)}")
             return state
     
     async def _handle_error(self, state: AgentState) -> AgentState:
@@ -162,7 +188,7 @@ class iPadChatbotAgent:
         logger.error(f"Error handled: {error_msg}")
         return state
     
-    def _should_handle_error(self, state: AgentState) -> str:
+    def _should_handle_error(self, state: AgentState) -> Literal["continue", "error"]:
         """Determine if we should handle an error"""
         return "error" if state.get("error") else "continue"
     
@@ -225,9 +251,7 @@ class iPadChatbotAgent:
                 spec_info = self._extract_specifications(result)
                 if spec_info:
                     relevant_info["specifications"].update(spec_info)
-            
-            # Extract other relevant information...
-            
+        
         return relevant_info
     
     def _extract_pricing(self, result: Dict) -> Dict:
@@ -273,6 +297,7 @@ class iPadChatbotAgent:
         }
         
         try:
+            # Use invoke instead of ainvoke for newer versions
             final_state = await self.workflow.ainvoke(initial_state)
             
             return {
