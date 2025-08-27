@@ -7,6 +7,10 @@ import asyncio
 import re
 import os
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 from utils.web_search import WebSearchTool
 from utils.query_classifier import QueryClassifier
@@ -38,15 +42,24 @@ class iPadChatbotAgent:
         """Initialize all components"""
         try:
             # Check for required environment variables
-            if not os.getenv("GROQ_API_KEY"):
+            groq_api_key = os.getenv("GROQ_API_KEY")
+            if not groq_api_key:
+                logger.error("GROQ_API_KEY environment variable is required")
+                logger.error("Please ensure your .env file contains: GROQ_API_KEY=your_key_here")
                 raise ValueError("GROQ_API_KEY environment variable is required")
+            
+            logger.info(f"Found GROQ_API_KEY: {groq_api_key[:10]}...")
             
             # Initialize ChatGroq LLM
             self.llm = ChatGroq(
                 model="mixtral-8x7b-32768",
                 temperature=0.1,
-                api_key=os.getenv("GROQ_API_KEY")
+                api_key=groq_api_key
             )
+            
+            # Test the LLM connection
+            test_result = await self.llm.ainvoke([{"role": "user", "content": "Hello"}])
+            logger.info("LLM connection test successful")
             
             # Initialize tools
             self.web_search = WebSearchTool()
