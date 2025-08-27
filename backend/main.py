@@ -6,6 +6,11 @@ from typing import Dict, Any, List
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from chatbot.ipad_agent import iPadChatbotAgent
 from utils.logger import setup_logger
@@ -21,9 +26,17 @@ async def lifespan(app: FastAPI):
     # Startup
     global agent
     try:
-        agent = iPadChatbotAgent()
-        await agent.initialize()
-        logger.info("iPad Chatbot Agent initialized successfully")
+        # Check if GROQ_API_KEY is loaded
+        groq_key = os.getenv("GROQ_API_KEY")
+        if not groq_key:
+            logger.error("GROQ_API_KEY not found in environment variables")
+            logger.error("Please check your .env file and ensure it's in the correct location")
+            agent = None
+        else:
+            logger.info(f"GROQ_API_KEY found: {groq_key[:10]}...")  # Show first 10 chars for verification
+            agent = iPadChatbotAgent()
+            await agent.initialize()
+            logger.info("iPad Chatbot Agent initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize agent: {str(e)}")
         agent = None
@@ -67,9 +80,12 @@ class ChatResponse(BaseModel):
 async def health_check():
     """Health check endpoint"""
     agent_status = "healthy" if agent else "not_initialized"
+    groq_key_status = "present" if os.getenv("GROQ_API_KEY") else "missing"
+    
     return {
         "status": "healthy",
         "agent_status": agent_status,
+        "groq_key_status": groq_key_status,
         "message": "iPad Chatbot API is running"
     }
 
@@ -80,7 +96,7 @@ async def chat(message: ChatMessage):
     if not agent:
         raise HTTPException(
             status_code=503, 
-            detail="Agent not initialized. Please check server logs."
+            detail="Agent not initialized. Please check server logs and ensure GROQ_API_KEY is set."
         )
     
     try:
